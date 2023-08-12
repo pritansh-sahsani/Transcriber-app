@@ -57,12 +57,19 @@
       <button id="add_transcript" class="btn btn-primary" @click="addTranscript">Add Transcript</button>
     </div>
     
-    <button @click="uploadVideo" id="upload_button" class="btn btn-primary" v-show="show_preview">Transcribe Video</button>
+    <button @click="generateVideo" id="upload_button" class="btn btn-primary" v-show="show_preview">Transcribe Video</button>
+
+    <div v-show="show_generated">
+        <video id="generated_video" ref="generated_video" controls></video>
+        <a id="download_link"><button class="btn btn-primary" @onclick="downloadVideo">Download Generated Video</button></a>
+    </div>
   </div>
 </template>
 
 
 <script>
+import axios from 'axios';
+
 export default {
     name: "IndexPage",
     
@@ -70,6 +77,7 @@ export default {
       return {
         show_preview: false,
         show_table: false,
+        show_generated: false,
         end_enabled: true,
         file: null,
         file_name: "Choose file...",
@@ -103,6 +111,7 @@ export default {
       } 
       else 
       {
+        this.uploadVideo();
         this.previewVideo();
       }
     },
@@ -123,31 +132,26 @@ export default {
 
     // send video to flask API
     uploadVideo() {
-      if(this.file == null)
-      {
-        alert('Please provide a video.');
-      }
-      else
-      {
         const formData = new FormData();
         formData.append('video', this.file);
-        const apiUrl = 'http://127.0.0.1:5000/api/test';
+        const apiUrl = 'http://127.0.0.1:5000/api/add_video';
 
         fetch(apiUrl, {
           method: 'POST',
           body: formData,
         })
-          .then((response) => {
-            if (response.ok) {
-              alert('Video uploaded successfully!');
-            } else {
+          .then(async response => {
+            if (!response.ok) {
               alert('There was an unexpected error, please try again!');
+            }
+            else{
+              this.TitleForAPI = await response.json();
+              this.TitleForAPI = this.TitleForAPI.video_title
             }
           })
           .catch((error) => {
             console.error(error);
           });
-      }
     },
 
     // adding transcript to the transcription dictionary
@@ -161,14 +165,16 @@ export default {
       else{
         if(end_time == ""){
           this.transcription.push([start_time, "-", text]);
-          this.$refs.transcription_input.value = "";
+          this.$refs.transcription_input.value = null;
         }
         else{
           if(end_time <= start_time){
             alert("End time must be more than the start time!");
           }
           else{
+            this.AddTranscriptToAPI(this.video_start.currentTime, this.video_end.currentTime, text);
             this.transcription.push([start_time, end_time, text]);
+            this.$refs.transcription_input.value = null;
           }
         }
       }
@@ -256,8 +262,73 @@ export default {
 
     toTwoDigitString(number) {
       return number.toString().padStart(2, '0');
-    }
+    },
+    
+    AddTranscriptToAPI(start_t, end_t, text){
+      const apiUrl = 'http://127.0.0.1:5000/api/add_transcript';
+      var data = { 
+        video_title: this.TitleForAPI,
+        start_time: start_t, 
+        end_time: end_t, 
+        text: text
+      }
+      fetch(apiUrl, {
+        method: 'POST',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      })
+        .then((response) => {
+          if (!response.ok) {
+            alert('There was an unexpected error, please try again!');
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+        });
+    },
+    generateVideo(){
+      if (this.show_table){
+          
+        const apiUrl = 'http://127.0.0.1:5000/api/generate_video';
+        axios({
+          url: apiUrl,
+          method: 'POST',
+          responseType: 'blob',
+          data:{
+          headers: { "Content-Type": "application/json" },
+          video_title: this.TitleForAPI,
+          font_size: 1,
+          line_thickness: 1,
+          color: [0,0,0],
+          bg_color: [255, 255, 255],
+          bg_transparency: 0.5,}
+        })
+          .then(response => {
+              this.generated_file = response.data;
+              this.href = URL.createObjectURL(response.data);
+              this.$refs.generated_video.src=this.href;
+              this.display_generated();
+          })
+          .catch((error) => {
+            console.error(error);
+          });
+      }
+      else{
+        alert("Provide transcripts to generate video!");
+      }
+    },
+    downloadVideo(){
+      var link = document.getElementById('download_link');
+      link.href = this.href;
+      link.setAttribute('download', this.file_name);
+    },
 
+    display_generated(){
+      // show generated
+      this.show_preview = false;
+      this.show_table = false;
+      this.show_generated = true;
+    }
   },
 };
 </script>
