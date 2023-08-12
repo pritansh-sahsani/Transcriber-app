@@ -34,18 +34,26 @@
             <th scope="col" class="column">Start</th>
             <th scope="col" class="column">End</th>
             <th scope="col" class="column">transcript</th>
+            <th scope="col" class="icon_column">Edit</th>
+            <th scope="col" class="icon_column">Delete</th>
           </tr>
         </thead>
         <thead>
-          <tr v-for="transcript in transcription" :key="transcript[0]">
-            <td>
-              {{transcript[0]}}
-            </td>
+          <tr v-for="transcript in transcription" :key="transcript[0]+'_div'" :class="transcript[0]">
             <td>
               {{transcript[1]}}
             </td>
             <td>
               {{transcript[2]}}
+            </td>
+            <td>
+              {{transcript[3]}}
+            </td>
+            <td>
+              <img class="edit_icon" :id="transcript[0]" @click="editTranscript" src="../assets/edit_icon.svg">
+            </td>
+            <td>
+              <img class="delete_icon" :id="transcript[0]" @click="deleteTranscript" src="../assets/delete_icon.svg">
             </td>
           </tr>
         </thead>
@@ -98,7 +106,7 @@ export default {
         end_enabled: true,
         file: null,
         file_name: "Choose file...",
-        transcription: [],
+        transcription: []
       };
     },
 
@@ -183,8 +191,6 @@ export default {
       else{
         if(end_time == ""){
           this.AddTranscriptToAPI(this.video_start.currentTime, -1, text);
-          this.transcription.push([start_time, "-", text]);
-          this.$refs.transcription_input.value = null;
         }
         else{
           if(end_time <= start_time){
@@ -192,26 +198,18 @@ export default {
           }
           else{
             this.AddTranscriptToAPI(this.video_start.currentTime, this.video_end.currentTime, text);
-            this.transcription.push([start_time, end_time, text]);
-            this.$refs.transcription_input.value = null;
           }
         }
-      }
-      
-      if(this.transcription.length>0){
-        this.show_table = true
       }
     },
     
     // toggles the end input between inactive or active
     ToogleEnd(){
       this.end_enabled = this.$refs.end_active_input.checked;
-      if (!this.end_enabled)
-      {
+      if (!this.end_enabled){
         document.getElementById("time_end_input").value = null;
       }
-      else
-      {
+      else{
         document.getElementById("time_end_input").value = this.timeToStr(this.video_end.currentTime);
       }
     },
@@ -284,6 +282,7 @@ export default {
     },
     
     AddTranscriptToAPI(start_t, end_t, text){
+      var transcript_id;
       const apiUrl = 'http://127.0.0.1:5000/api/add_transcript';
       var data = { 
         video_title: this.TitleForAPI,
@@ -296,9 +295,20 @@ export default {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
       })
-        .then((response) => {
+        .then(async response => {
           if (!response.ok) {
             alert('There was an unexpected error, please try again!');
+          }
+          else{
+            transcript_id = await response.json();
+            if (end_t  == -1){
+              this.transcription.push([transcript_id['transcript_id'], start_t, "-", text]);
+            }
+            else{
+              this.transcription.push([transcript_id['transcript_id'], this.timeToStr(start_t), this.timeToStr(end_t), text]);
+            }
+            this.$refs.transcription_input.value = null;
+            this.show_table = true;
           }
         })
         .catch((error) => {
@@ -320,7 +330,6 @@ export default {
         })
           .then(async response => {
               this.generated_file = await response.data;
-              console.log(this.generated_file);
               this.displayGenerated();
           })
           .catch((error) => {
@@ -343,6 +352,76 @@ export default {
       var link = document.getElementById('download_link');
       link.href = this.href;
       link.setAttribute('download', this.href);
+    },
+    editTranscript($event){
+      var transcript_id = $event.target.id;
+      const apiUrl = "http://127.0.0.1:5000/api/delete_transcript";
+      axios({
+        url: apiUrl,
+        method: 'POST',
+        responseType: 'blob',
+        data:{
+        headers: { "Content-Type": "application/json" },
+        'transcript_id': transcript_id,}
+      })
+        .then(response => {
+          response;
+          for(var x = 0; x<this.transcription.length; x++){
+            if (this.transcription[x][0] == transcript_id){
+              document.getElementById("time_start_input").value = this.transcription[x][1];
+              document.getElementById("time_end_input").value = this.transcription[x][2];
+              document.getElementById("transcription_input").value = this.transcription[x][3];
+              this.transcription.splice(x, 1);
+            }
+          }
+          if (this.transcription.length == 0){
+            this.show_table=false;
+          }
+        })
+        .catch((error) => {
+            if (error.message == 'Request failed with status code 404')
+            {
+              alert("Transcript not found!");
+            }
+            else{
+              console.error(error.message);
+              alert('There was an unexpected error, please try again!');
+            }
+        });
+    },
+
+    deleteTranscript($event){
+      var transcript_id = $event.target.id;
+      const apiUrl = "http://127.0.0.1:5000/api/delete_transcript";
+      axios({
+        url: apiUrl,
+        method: 'POST',
+        responseType: 'blob',
+        data:{
+        headers: { "Content-Type": "application/json" },
+        'transcript_id': transcript_id,}
+      })
+        .then(response => {
+          response;
+          for(var x = 0; x<this.transcription.length; x++){
+            if (this.transcription[x][0] == transcript_id){
+              this.transcription.splice(x, 1);
+            }
+          }
+          if (this.transcription.length == 0){
+            this.show_table=false;
+          }
+        })
+        .catch((error) => {
+            if (error.message == 'Request failed with status code 404')
+            {
+              alert("Transcript not found!");
+            }
+            else{
+              console.error(error.message);
+              alert('There was an unexpected error, please try again!');
+            }
+        });  
     },
     
     displayPreview(){
@@ -484,7 +563,23 @@ p{
 }
 
 .column{
-  width: 30%;
+  width: 25%;
+}
+
+.icon_column{
+  width: 7.5%;
+}
+
+.delete_icon{
+  width: 50%;
+  height: 50%;
+} 
+.edit_icon{
+  width: 40%;
+}
+
+td{
+  vertical-align: baseline;
 }
 
 .time_end_input:focus{

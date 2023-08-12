@@ -18,7 +18,7 @@ class GeneratedTranscript(db.Model):
     def __repr__(self):
         return f"<GeneratedTranscript {self.id}>"
 
-class transcript(db.Model):
+class Transcript(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     video_id = db.Column(db.Integer, default=0, nullable=False)
     start_time = db.Column(db.Float, nullable=False)

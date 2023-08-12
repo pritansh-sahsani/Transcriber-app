@@ -1,6 +1,6 @@
 from main import app, db
 from flask import jsonify, request, abort, send_file
-from .models import Video, GeneratedTranscript, transcript
+from .models import Video, GeneratedTranscript, Transcript
 from werkzeug.utils import secure_filename
 from moviepy.editor import VideoFileClip
 
@@ -49,8 +49,23 @@ def add_transcript():
     end_time = request.get_json()['end_time']
 
     video = Video.query.filter_by(video_title=video_title).first_or_404()
-    new_transcript = transcript(video_id = video.id, start_time = float(start_time), end_time = float(end_time), text = text)
+    new_transcript = Transcript(video_id = video.id, start_time = float(start_time), end_time = float(end_time), text = text)
     db.session.add(new_transcript)
+    db.session.commit()
+
+    transcript = Transcript.query.filter_by(video_id = video.id, start_time = float(start_time), end_time = float(end_time)).first_or_404()
+    return jsonify({"transcript_id":new_transcript.id})
+
+
+@app.route("/api/delete_transcript", methods=['POST'])
+def delete_transcript():
+    # get variables
+    transcript_id = request.get_json()['transcript_id']
+    if transcript_id is None:
+        abort(404, description="Transcript Id not found!")
+    
+    transcript = Transcript.query.filter_by(id=transcript_id).first_or_404()
+    db.session.delete(transcript)
     db.session.commit()
 
     return jsonify({"success":True})
@@ -129,7 +144,7 @@ def generate_transcript():
 
     # get data from database
     video = Video.query.filter_by(video_title=video_title).first_or_404()
-    db_transcripts = transcript.query.filter_by(video_id=video.id).all()
+    db_transcripts = Transcript.query.filter_by(video_id=video.id).all()
     
     # get video path
     video_path = os.path.join("main", "user_data", "videos" , video_title)
