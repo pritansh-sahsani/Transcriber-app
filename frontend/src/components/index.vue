@@ -1,68 +1,82 @@
 <template>
   <div id="home_page">		
     <h1>Transcriber</h1><hr>
-    <p v-show="!show_preview">upload a video file to transcribe</p>
-    
-    <!-- input for video file -->
-    <div class="custom-file">
-      <input type="file" class="custom-file-input" id="validatedCustomFile" @change="handleFileUpload" required>
-      <label class="custom-file-label" for="validatedCustomFile">{{ file_name }}</label>
-      <div class="invalid-feedback">Example invalid custom file feedback</div>
-    </div>
 
-    <!-- video previews -->
-    <div class="video_previews" v-show="show_preview">
-      <div>
-        <h3 id="start_preview_title">Start Frame</h3>
-        <h3 id="end_preview_title" v-show="end_enabled">End Frame</h3>
-      </div>
-      <div>
-        <video id="video_preview_start" ref="video_start" controls></video>
-        <video id="video_preview_end" ref="video_end" v-show="end_enabled" controls></video>
+    <!-- initial frame div -->
+    <div v-show="show_initial_frame">
+      <p>upload a video file to transcribe</p>
+      <div class="custom-file">
+        <input type="file" class="custom-file-input" id="validatedCustomFile" @change="handleFileUpload" required>
+        <label class="custom-file-label" for="validatedCustomFile">{{ file_name }}</label>
+        <div class="invalid-feedback">Example invalid custom file feedback</div>
       </div>
     </div>
-    
-    <!-- table for displaying current transcript -->
-    <table class="table" v-show="show_table">
-      <thead class="thead-light">
-        <tr>
-          <th scope="col" class="column">Start</th>
-          <th scope="col" class="column">End</th>
-          <th scope="col" class="column">Subtitle</th>
-        </tr>
-      </thead>
-      <thead>
-        <tr v-for="transcript in transcription" :key="transcript[0]">
-          <td>
-            {{transcript[0]}}
-          </td>
-          <td>
-            {{transcript[1]}}
-          </td>
-          <td>
-            {{transcript[2]}}
-          </td>
-        </tr>
-      </thead>
-    </table>
 
-    <!-- form for getting transcript --> 
-    <div class="transcript-form" v-show="show_preview">
-      <input id="time_start_input" ref="time_start" class="form-control" @change="timeInputStart">
-      <input id="time_end_input" ref="time_end" class="form-control" placeholder="End time is disabled." @change="timeInputEnd" :readonly="!end_enabled">
+    <!-- preview and adding transcript div -->
+    <div v-show="show_preview">
+      <p>You can add transcripts from the inputs or directly from the video previews.<br>disabling end time will automatically display the transcript till the next transcript is displayed.<br>Make sure transcripts do not overlap!</p>
+      <!-- video previews -->
+      <div class="video_previews">
+        <div>
+          <h3 id="start_preview_title">Start Frame</h3>
+          <h3 id="end_preview_title" v-show="end_enabled">End Frame</h3>
+        </div>
+        <div>
+          <video id="video_preview_start" ref="video_start" controls></video>
+          <video id="video_preview_end" ref="video_end" v-show="end_enabled" controls></video>
+        </div>
+      </div>
+      
+      <!-- table for displaying current transcript -->
+      <table class="table" v-show="show_table">
+        <thead class="thead-light">
+          <tr>
+            <th scope="col" class="column">Start</th>
+            <th scope="col" class="column">End</th>
+            <th scope="col" class="column">transcript</th>
+          </tr>
+        </thead>
+        <thead>
+          <tr v-for="transcript in transcription" :key="transcript[0]">
+            <td>
+              {{transcript[0]}}
+            </td>
+            <td>
+              {{transcript[1]}}
+            </td>
+            <td>
+              {{transcript[2]}}
+            </td>
+          </tr>
+        </thead>
+      </table>
 
-      <input id="end_active_input" ref="end_active_input" class="checkbox-input" type="checkbox" checked @click="ToogleEnd">
+      <!-- form for getting transcript --> 
+      <div class="transcript-form">
+        <input id="time_start_input" ref="time_start" class="form-control" @change="timeInputStart">
+        <input id="time_end_input" ref="time_end" class="form-control" placeholder="End time is disabled." @change="timeInputEnd" :readonly="!end_enabled">
 
-      <input id="transcription_input" ref="transcription_input" class="form-control" placeholder="Enter transcript">
-      <button id="add_transcript" class="btn btn-primary" @click="addTranscript">Add Transcript</button>
+        <input id="end_active_input" ref="end_active_input" class="checkbox-input" type="checkbox" checked @click="ToogleEnd">
+
+        <input id="transcription_input" ref="transcription_input" class="form-control" placeholder="Enter transcript">
+        <button id="add_transcript" class="btn btn-primary" @click="addTranscript">Add Transcript</button>
+      </div>
+      
+      <button @click="generateTranscript" id="upload_button" class="btn btn-primary">Transcribe Video</button>
     </div>
-    
-    <button @click="generateVideo" id="upload_button" class="btn btn-primary" v-show="show_preview">Transcribe Video</button>
+
+    <div v-show="show_waiting">
+      <h1>Please Wait While We Process Your File.</h1>
+    </div>
 
     <div v-show="show_generated">
-        <video id="generated_video" ref="generated_video" controls></video>
-        <a id="download_link"><button class="btn btn-primary" @onclick="downloadVideo">Download Generated Video</button></a>
+        <video id="generated_video" ref="generated_video" controls>
+          <source type="video/mp4" ref="generated_video_source">   
+          <track kind="captions" srclang="en-us" label="English" ref="generated_transcript" default>
+      </video>
+        <a id="download_link"><button id="download_link_button" class="btn btn-primary">Download Generated Transcript</button></a>
     </div>
+
   </div>
 </template>
 
@@ -75,9 +89,12 @@ export default {
     
     data() {
       return {
+        show_initial_frame: true,
         show_preview: false,
         show_table: false,
+        show_waiting: false,
         show_generated: false,
+
         end_enabled: true,
         file: null,
         file_name: "Choose file...",
@@ -122,7 +139,7 @@ export default {
       const video_end = document.getElementById('video_preview_end');
 
       this.file_name = this.file.name;
-      this.show_preview = true;
+      this.displayPreview();
 
       video_start.src = URL.createObjectURL(this.file);
       video_end.src = URL.createObjectURL(this.file);
@@ -150,7 +167,8 @@ export default {
             }
           })
           .catch((error) => {
-            console.error(error);
+            console.error(error.message);
+            alert('There was an unexpected error, please try again!');
           });
     },
 
@@ -160,10 +178,11 @@ export default {
       var start_time = this.$refs.time_start.value;
       var text = this.$refs.transcription_input.value;
       if (start_time == "" || text == ""){
-        alert("Start time and subtitles cannot be empty!")
+        alert("Start time and transcripts cannot be empty!")
       }
       else{
         if(end_time == ""){
+          this.AddTranscriptToAPI(this.video_start.currentTime, -1, text);
           this.transcription.push([start_time, "-", text]);
           this.$refs.transcription_input.value = null;
         }
@@ -283,51 +302,83 @@ export default {
           }
         })
         .catch((error) => {
-          console.error(error);
+          console.error(error.message);
+          alert('There was an unexpected error, please try again!');
         });
     },
-    generateVideo(){
+    generateTranscript(){
       if (this.show_table){
-          
-        const apiUrl = 'http://127.0.0.1:5000/api/generate_video';
+        this.displayWaiting();
+        const apiUrl = 'http://127.0.0.1:5000/api/generate_transcript';
         axios({
           url: apiUrl,
           method: 'POST',
           responseType: 'blob',
           data:{
           headers: { "Content-Type": "application/json" },
-          video_title: this.TitleForAPI,
-          font_size: 1,
-          line_thickness: 1,
-          color: [0,0,0],
-          bg_color: [255, 255, 255],
-          bg_transparency: 0.5,}
+          video_title: this.TitleForAPI,}
         })
-          .then(response => {
-              this.generated_file = response.data;
-              this.href = URL.createObjectURL(response.data);
-              this.$refs.generated_video.src=this.href;
-              this.display_generated();
+          .then(async response => {
+              this.generated_file = await response.data;
+              console.log(this.generated_file);
+              this.displayGenerated();
           })
           .catch((error) => {
-            console.error(error);
+              if (error.message == 'Request failed with status code 404')
+              {
+                alert("Transcripts are overlapping!");
+                this.displayPreview();
+              }
+              else{
+                console.error(error.message);
+                alert('There was an unexpected error, please try again!');
+              }
           });
       }
       else{
         alert("Provide transcripts to generate video!");
       }
     },
-    downloadVideo(){
+    downloadTranscript(){
       var link = document.getElementById('download_link');
       link.href = this.href;
-      link.setAttribute('download', this.file_name);
+      link.setAttribute('download', this.href);
+    },
+    
+    displayPreview(){
+      this.show_initial_frame= false;
+      this.show_preview= true;
+      this.show_table= false;
+      this.show_waiting= false;
+      this.show_generated= false;
     },
 
-    display_generated(){
+    displayGenerated(){
       // show generated
-      this.show_preview = false;
-      this.show_table = false;
-      this.show_generated = true;
+      this.show_initial_frame= false;
+      this.show_preview= false;
+      this.show_table= false;
+      this.show_waiting= false;
+      this.show_generated= true;
+
+      // display video
+      this.$refs.generated_video_source.src = URL.createObjectURL(this.file);
+      this.$refs.generated_video.load();
+
+      // display subtitles
+      this.href = URL.createObjectURL(this.generated_file);
+      this.$refs.generated_transcript.src=this.href;
+
+      // download button
+      this.downloadTranscript();
+    },
+
+    displayWaiting(){
+        this.show_initial_frame = false;
+        this.show_preview = false;
+        this.show_table = false;
+        this.show_waiting = true;
+        this.show_generated = false;
     }
   },
 };
@@ -365,6 +416,13 @@ p{
   margin-left: auto;
   margin-right: auto;
   margin-top: 0.5rem;
+}
+
+#generated_video{
+  width: 37.5%;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 #start_preview_title, #end_preview_title{
@@ -440,10 +498,14 @@ p{
   margin-left: 1%;
   margin-right: 1%;
 }
+
 #time_end_input{
   display: inline-flex;
   width: 90%;
   margin-top: 0.5rem;
 }
 
+#download_link_button{
+  margin-top: 0.5rem;
+}
 </style>

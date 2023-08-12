@@ -1,16 +1,38 @@
 from main import app, db
 from flask import jsonify, request, abort, send_file
-from .models import Video, GeneratedVideo, transcript
+from .models import Video, GeneratedTranscript, transcript
 from werkzeug.utils import secure_filename
-import cv2
-import numpy as np
+from moviepy.editor import VideoFileClip
 
 import os
 
-# route for adding a transcript. 
-# Requires start time and transcript and optionaly takes end time as parameters. 
 @app.route("/api/add_transcript", methods=['POST'])
 def add_transcript():
+    """
+    Endpoint for adding a transcript to a video.
+
+    This route allows users to add a transcript to a specified video, including the transcript's start time, text content,
+    and optionally, end time. The provided video title is used to identify the video to which the transcript belongs.
+    The transcript information is extracted from the JSON payload of the POST request and then stored in the database.
+
+    Parameters:
+        None (Parameters are extracted from the JSON payload of the POST request)
+
+    Returns:
+        dict: A JSON response indicating the success status of the operation.
+            - "success": True if the transcript addition was successful, otherwise False.
+    
+    Raises:
+        404 Error: If any of the required parameters (video_title, start_time, text) are missing in the request payload.
+
+    Example JSON Payload:
+    {
+        "video_title": "my_video_2.mp4",
+        "start_time": 10.5,
+        "end_time": 20.0,
+        "text": "This is a sample transcript."
+    }
+    """
     # get variables
     video_title = request.get_json()['video_title']
     if video_title is None:
@@ -35,6 +57,27 @@ def add_transcript():
 
 @app.route("/api/add_video", methods=['POST'])
 def add_video():
+    """
+    Endpoint for adding a video file and its information.
+
+    This route allows users to upload a video file and associate it with metadata in the database. The uploaded video file
+    is stored in the designated directory, and its metadata (video title) is added to the database.
+
+    Parameters:
+        None (Parameters are extracted from the POST request)
+
+    Returns:
+        dict: A JSON response containing the newly assigned video title that it is saved as to prevent overwritting other files.
+            - "video_title": The title assigned to the uploaded video.
+
+    Raises:
+        404 Error: If the uploaded video file is not found in the request.
+
+    Example Usage:
+        POST request with a video file named "my_video.mp4"
+        Response: {"video_title": "my_video_2.mp4"}
+    """
+
     # get video file from request
     video_file = request.files['video']
     if video_file is None:
@@ -43,11 +86,10 @@ def add_video():
     # save video to storage/file
     file_name = secure_filename(video_file.filename)
     file_path = os.path.join("main", "user_data", "videos" , file_name)
-    file_name, file_path, extension = find_available_file(file_path=file_path, file_name=file_name)
+    file_path, file_name = find_available_file(file_path=file_path)
     video_file.save(file_path)
 
     # add to database
-    file_name = file_name + extension
     video = Video(video_title = file_name)
     db.session.add(video)
     db.session.commit()
@@ -55,131 +97,260 @@ def add_video():
     # return new video title
     return jsonify({"video_title": file_name})    
 
-@app.route("/api/generate_video", methods=['POST'])
-def generate_video():
+@app.route("/api/generate_transcript", methods=['POST'])
+def generate_transcript():
+    """
+    Endpoint for generating a transcript file for a video.
+
+    This route generates a transcript file in .vtt format for a specified video, based on the provided transcript data
+    and video information. The transcript is generated from the database records and then saved to a designated directory.
+    The generated transcript is associated with the video in the database.
+
+    Parameters:
+        None (Parameters are extracted from the JSON payload of the POST request)
+
+    Returns:
+        file: The generated transcript file in .vtt format.
+
+    Raises:
+        404 Error: If the video title is not found in the request or if any error occurs during transcript generation.
+
+    Example JSON Payload:
+    {
+        "video_title": "my_video_2.mp4"
+    }
+    """
     # get variables
     data = request.get_json(silent=True)
 
     video_title =  data.get('video_title')
     if video_title is None:
         abort(404, description="Video title not found!")
-    
-    font_size =  data.get('font_size')
-    line_thickness =  data.get('line_thickness')
-    color = tuple( data.get('color'))
-    bg_color = tuple( data.get('bg_color'))
-    bg_transparency =  data.get('bg_transparency')
 
     # get data from database
     video = Video.query.filter_by(video_title=video_title).first_or_404()
-    video_path = os.path.join("main", "user_data", "videos" , video_title)
-    new_video_path = os.path.join("main", "user_data", "generated_videos" , video_title)   
     db_transcripts = transcript.query.filter_by(video_id=video.id).all()
+    
+    # get video path
+    video_path = os.path.join("main", "user_data", "videos" , video_title)
+
+    # get file_path
+    path, base_name, extension = split_file_path(os.path.join("main", "user_data", "transcripts" , video_title))
+    transcript_title = base_name+'.vtt'
+    transcript_path = os.path.join(path, transcript_title)
+
+    # handle transcripts for generating video
     transcripts=[]
     for t in db_transcripts:
-        transcripts.append((t.start_time, t.end_time, t.text))
+        transcripts.append([t.start_time, t.end_time, t.text])
     
-    # edit video
-    add_transcripts_to_video(video_path=video_path, new_video_path=new_video_path, transcripts=transcripts, font_size=font_size, line_thickness=line_thickness, color=color, bg_color=bg_color, bg_transparency=bg_transparency)
-    
+    # handle end time being empty or overlaping next transcript
+    has_errors = ensure_transcript_integrity(transcripts, video_path)
+    if has_errors:
+        abort(404,  description="Transcripts are overlapping!")
+
+    # generate transcript file
+    generate_transcript_file(transcripts=transcripts, filepath=transcript_path)
+
     # add to database
-    generated_video = GeneratedVideo()
+    generated_transcript = GeneratedTranscript(transcript_title = transcript_title)    
+    db.session.add(generated_transcript)
+    db.session.commit()
 
-    return send_file(os.path.join("user_data", "generated_videos" , video_title))
+    # update Video in database
+    generated_transcript = GeneratedTranscript.query.filter_by(transcript_title=transcript_title).first_or_404()
+    Video.query.filter_by(id=video.id).update(dict(generated_transcript_id = generated_transcript.id))
+    db.session.commit()
 
-def find_available_file(file_path, file_name):
-    suffix = 1
-    file_name, extension = os.path.splitext(file_name)
-    if not os.path.exists(file_path):
-        return file_name, file_path, extension
-    while True:
-        new_file_path, new_file_name, extension = add_suffix(file_path=file_path, suffix=suffix)
-        if not os.path.exists(new_file_path):
-            return new_file_name+"_"+str(suffix), new_file_path, extension
-        suffix +=1
+    # return the generated video file. The path for send_file function must be relative to current file and not root directory.
+    generated_transcript_path = os.path.join("user_data", "transcripts" , transcript_title)
+    return send_file(generated_transcript_path)
 
-def add_suffix(file_path, suffix):
-    
-    """ add a provided suffix to the file name while keeping path and file extension consistent."""
-    # Split the original file path into directory, base name, and extension
-    directory, old_base_name = os.path.split(file_path)
-    base_name, extension = os.path.splitext(old_base_name)
+def find_available_file(file_path):
+    """
+    Find an available filename by appending a numeric suffix.
 
-    # Create the new file path by combining the directory, new file name, and extension
-    new_file_path = os.path.join(directory, f"{base_name}_{suffix}{extension}")
+    This function takes a file path as input and appends a numeric suffix to the file name (before the extension) if the
+    initial file name is already taken. It checks if the file path exists and, if so, iterates through appending
+    incremental numeric suffixes until an available file name is found.
 
-    return new_file_path, base_name, extension
-
-def add_transcripts_to_video(video_path, new_video_path, transcripts, font_size, line_thickness, color, bg_color, bg_transparency):
-    """Adds transcripts to a video file.
-
-    Args:
-        video_path: The path to the input video file.
-        new_video_path: The path to the ouput video file.
-        transcripts: A list of transcripts, each of which is a tuple of (start_time, end_time, text).
-        
-        config variables:
-        font_size: size of font.
-        line_thickness: line height.
-        color: text color (r,g,b).
-        bg_color: background color (r,g,b), None for transparent.
-        bg_transparency: transparency for background if bg_color is provided. 1 is opaque, 0 is transparent.
-
+    Parameters:
+        file_path (str): The original path of the file.
 
     Returns:
-        The path to the new video file with the transcripts added.
+        tuple: A tuple containing the full path of the available file and its corresponding new file name.
+
+    Example Usage:
+        original_file_path = "path/to/myfile.txt"
+        available_path, new_file_name = find_available_file(original_file_path)
     """
 
-    import cv2
-    import numpy as np
+    suffix = 1
+    dir, file_name, extension = split_file_path(file_path)
+    if not os.path.exists(file_path):
+        return file_path, file_name+extension
+    while True:
+        new_file_name = add_suffix(file_path=file_path, suffix=suffix)
+        full_file_path = os.path.join(dir, new_file_name)
+        if not os.path.exists(full_file_path):
+            return full_file_path, new_file_name
+        suffix +=1
 
-    video = cv2.VideoCapture(video_path)
-    width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    output_video = cv2.VideoWriter(new_video_path , fourcc, video.get(cv2.CAP_PROP_FPS), (width, height))
+def split_file_path(file_path):
+    """
+    Split a file path into directory, file name without extension, and file extension.
 
-    for start_time, end_time, text in transcripts:
-        start_frame = int(start_time * video.get(cv2.CAP_PROP_FPS))
-        end_frame = int(end_time * video.get(cv2.CAP_PROP_FPS))
+    This function takes a file path as input and splits it into its components: the directory path, the file name without
+    extension, and the file extension. It extracts the necessary parts to facilitate handling file paths.
 
-        for frame_num in range(0, int(video.get(cv2.CAP_PROP_FRAME_COUNT))):
-            success, frame = video.read()
-            if not success:
-                break
+    Parameters:
+        file_path (str): The full path of the file, including directory and file name.
 
-            if frame_num >= start_frame and frame_num <= end_frame:
-                font = cv2.FONT_HERSHEY_SIMPLEX
+    Returns:
+        tuple: A tuple containing the directory path, the file name without extension, and the file extension.
 
+    Example Usage:
+        full_file_path = "/path/to/myfile.txt"
+        dir_path, filename, extension = split_file_path(full_file_path)
+    """
+    directory_path = os.path.dirname(file_path)
+    file_name_without_extension = os.path.splitext(os.path.basename(file_path))[0]
+    file_extension = os.path.splitext(file_path)[1]
+    
+    return directory_path, file_name_without_extension, file_extension
+
+def add_suffix(file_path, suffix):
+    """
+    Add a provided suffix to the file name while keeping path and extension consistent.
+
+    This function takes a file path, appends a numeric suffix to the file name (before the extension), and returns the
+    new file name. It ensures that the directory path and file extension remain consistent in the returned file path.
+
+    Parameters:
+        file_path (str): The original path of the file.
+        suffix (int): The numeric suffix to be added to the file name.
+
+    Returns:
+        str: The new file name with the added numeric suffix.
+
+    Example Usage:
+        original_file_path = "/path/to/myfile.txt"
+        new_filename = add_suffix(original_file_path, 2)  # Returns "myfile_2.txt"
+    """
+    # Split the original file path into directory, base name, and extension
+    directory, base_name, extension = split_file_path(file_path)
+    new_file_name = f"{base_name}_{suffix}{extension}"
+
+    return new_file_name
+
+def ensure_transcript_integrity(transcript, path):
+    """
+    Ensure the integrity of transcript time intervals.
+
+    This function ensures the integrity of time intervals within a transcript list to prevent overlapping or inconsistent
+    time segments. It iterates through the transcript list and, if necessary, adjusts the end time of a transcript to
+    align with the start time of the next transcript. It also checks for any overlap between adjacent transcript times. 
+    It also converts end times and start times from seconds to "HH:MM:SS,MIS", where "MIS" stands for milliseconds.
+
+    Parameters:
+        transcript (list): A list of transcript segments, where each segment is represented as [start_time, end_time, text].
+        path (str): The path of the video file.
+
+    Returns:
+        bool: True if transcript time intervals are overlapping, otherwise False.
+
+    Example Usage:
+        transcript_list = [
+            [0.0, 5.0, "Hello"],
+            [5.1, -1.0, "World"],
+        ]
+        has_overlap = ensure_transcript_integrity(transcript_list, "path/to/video.mp4")
+    """
+    for current in range(0, len(transcript)):
+        # If the current transcript doesnt have a end time 
+        if transcript[current][1] == -1.0:
+            # if it is not the last transcript
+            if current+1 < len(transcript):
+                # current end time will be the next transcripts start time
+                transcript[current][1] = transcript[current+1][0]
+            else:
+                # else the current end time will be the video end.
+                transcript[current][1] = get_video_duration(path)
+        else:
+            # if the end time exists, ensure it is not overlaping next transcript.
+            if current+1 < len(transcript):
+                if transcript[current][1] > transcript[current+1][0]:
+                    return True
                 
-                # Create a copy of the frame to draw the text and bg
-                frame_with_text = frame.copy()
+        # convert format
+        transcript[current][0] = time_to_str(transcript[current][0])
+        transcript[current][1] = time_to_str(transcript[current][1])
+    
+    # if transcripts are not overlaping, return false.
+    return False
 
-                # Get the size of the text to calculate the bg rectangle dimensions
-                text_width, text_height  = cv2.getTextSize(text, font, font_size, line_thickness)[0]
+def time_to_str(time):
+    """
+    Convert a given time in seconds to the format "hours : minutes : seconds, milliseconds".
 
-                # Calculate bg rectangle dimensions
-                bg_width = text_width + 20  # Adding some padding
-                bg_height = text_height + 20
+    Args:
+        time (float): The time duration in seconds.
 
-                bg_p1 = (int((width-bg_width)/2), height - 20 - bg_height)
-                bg_p2 = (int((width+bg_width)/2), height - 20)
+    Returns:
+        str: The formatted time string in the format "hours : minutes : seconds, milliseconds".
+    """
+    hours = int(time // 3600)
+    minutes = int((time % 3600) // 60)
+    seconds = int(time % 60)
+    milliseconds = int((time - int(time)) * 1000)
+    
+    time_format = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+    return time_format
 
-                # Calculate the position to center the text within the bg rectangle
-                text_x = bg_p1[0] + 10
-                text_y = bg_p1[1] + 10 + text_height
+def get_video_duration(path):
+    """
+    Get the duration of a video file.
 
-                # Draw the bg rectangle
-                if bg_color is not None:
-                    cv2.rectangle(frame_with_text, bg_p1, bg_p2, bg_color, -1)
-                    # Combine the frame with the text and the original frame
-                    frame = cv2.addWeighted(frame, 1-bg_transparency, frame_with_text, bg_transparency, 0)
+    This function uses the `VideoFileClip` class from the `moviepy.editor` module to extract and return the duration
+    of a video file in seconds. It opens the video clip, retrieves its duration, and then closes the clip.
 
-                # Draw the centered text on top of the bg rectangle
-                cv2.putText(frame, text, (text_x, text_y), font, font_size, color, line_thickness, cv2.LINE_AA)
+    Parameters:
+        path (str): The path of the video file.
 
+    Returns:
+        float: The duration of the video in seconds.
 
-            output_video.write(frame)
+    Example Usage:
+        video_path = "path/to/video.mp4"
+        duration = get_video_duration(video_path)
+    """
+    video_clip = VideoFileClip(path)
+    duration = video_clip.duration
+    video_clip.close()
+    return duration
 
-    video.release()
-    output_video.release()
+def generate_transcript_file(transcripts, filepath):
+    """
+    Generate a .vtt transcript file from a list of transcripts.
+
+    This function takes a list of transcripts, where each transcript includes a start time, end time, and text content.
+    It generates a .vtt (Web Video Text Tracks) subtitle file format based on the provided transcripts and saves it at
+    the specified file path.
+
+    Args:
+        transcripts (list): A list of transcripts, each containing [start_time, end_time, text].
+        filepath (str): The file path to save the generated transcript file.
+
+    Example Usage:
+        transcripts_list = [
+            [10.0, 15.0, "Hello, this is the first part."],
+            [18.5, 22.0, "And here's the second part."]
+        ]
+        transcript_file_path = "path/to/generated_transcript.vtt"
+        generate_transcript_file(transcripts_list, transcript_file_path)
+    """
+    with open(filepath, "w") as f:
+        f.write(f"WEBVTT\n\n")
+        for transcript in transcripts:
+            f.write(f"{transcript[0]} --> {transcript[1]}\n")
+            f.write(f"{transcript[2]}\n\n")

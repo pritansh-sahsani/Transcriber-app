@@ -5,18 +5,18 @@ class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     video_title = db.Column(db.String(255), nullable=False, unique=True)
     upload_time = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    generated_video_id = db.Column(db.Integer, default=0, unique=True)
+    generated_transcript_id = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return f"<Video {self.id}>"
     
-class GeneratedVideo(db.Model):
+class GeneratedTranscript(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    video_title = db.Column(db.String(255), nullable=False, unique=True)
+    transcript_title = db.Column(db.String(255), nullable=False, unique=True)
     generated_time = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
     def __repr__(self):
-        return f"<GeneratedVideo {self.id}>"
+        return f"<GeneratedTranscript {self.id}>"
 
 class transcript(db.Model):
     id = db.Column(db.Integer, primary_key=True)
