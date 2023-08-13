@@ -4,13 +4,13 @@ import UserPage from "@/components/user.vue";
 
 const routes = [
   {
-    path: "/index",
+    path: "/",
     name: "IndexPage",
     component: IndexPage,
     props: true,
   },
   {
-    path: "/index/:title_from_user",
+    path: "/:title_from_user",
     name: "IndexPageWithUserTitle",
     component: IndexPage,
     props: true,

@@ -3,6 +3,7 @@
     <h1>Please Wait While We Get Your Files.</h1>
   </div>
   <div v-show="show_table">
+    <h3>Your Uploaded Videos</h3><hr>
     <!-- table for displaying current transcript -->
     <table class="table">
       <thead class="thead-light">
@@ -27,6 +28,10 @@
   </table>
 </div>
 
+<div v-show="show_no_uploads">
+  <h3>You have no Uploads and generated transcripts.</h3>
+</div>
+
 </template>
 <script>
   import axios from 'axios';
@@ -39,6 +44,7 @@ export default {
       return {
         show_initial_frame: true,
         show_table: false,
+        show_no_uploads: false,
 
         user_ip: null,
         titles: null,
@@ -135,7 +141,12 @@ export default {
       },
       display_table(){
         this.show_initial_frame = false;
-        this.show_table = true;
+        if (this.titles['videos'] != 'None'){
+          this.show_table = true;
+        }
+        else{
+          this.show_no_uploads = true;
+        }
       },
     },
   };

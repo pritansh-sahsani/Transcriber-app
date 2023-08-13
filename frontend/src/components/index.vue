@@ -6,9 +6,8 @@
     <div v-show="show_initial_frame">
       <p>upload a video file to transcribe</p>
       <div class="custom-file">
-        <input type="file" class="custom-file-input" id="validatedCustomFile" @change="handleFileUpload" required>
+        <input type="file" class="custom-file-input" id="validatedCustomFile" @change="handleFileUpload">
         <label class="custom-file-label" for="validatedCustomFile">{{ file_name }}</label>
-        <div class="invalid-feedback">Example invalid custom file feedback</div>
       </div>
     </div>
 
@@ -310,7 +309,7 @@ export default {
           else{
             transcript_id = await response.json();
             if (end_t  == -1){
-              this.transcription.push([transcript_id['transcript_id'], start_t, "-", text]);
+              this.transcription.push([transcript_id['transcript_id'], this.timeToStr(start_t), "-", text]);
             }
             else{
               this.transcription.push([transcript_id['transcript_id'], this.timeToStr(start_t), this.timeToStr(end_t), text]);
@@ -538,7 +537,7 @@ p{
 }
 
 #generated_video{
-  width: 37.5%;
+  width: 80%;
   display: block;
   margin-left: auto;
   margin-right: auto;

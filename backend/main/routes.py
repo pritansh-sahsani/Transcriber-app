@@ -214,7 +214,7 @@ def get_titles():
     
     videos = Video.query.filter_by(user_ip = user_ip).all()
     if len(videos) == 0:
-        return jsonify({'videos': None})
+        return jsonify({'videos': 'None'})
     
     titles = {}
     for video in videos:
