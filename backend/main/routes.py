@@ -24,29 +24,23 @@ def add_transcript():
     
     Raises:
         404 Error: If any of the required parameters (video_title, start_time, text) are missing in the request payload.
-
-    Example JSON Payload:
-    {
-        "video_title": "my_video_2.mp4",
-        "start_time": 10.5,
-        "end_time": 20.0,
-        "text": "This is a sample transcript."
-    }
     """
     # get variables
-    video_title = request.get_json()['video_title']
+    data = request.get_json()
+    
+    video_title = data['video_title']
     if video_title is None:
         abort(404, description="Video title not found!")
 
-    start_time = request.get_json()['start_time']
+    start_time = data['start_time']
     if start_time is None:
         abort(404, description="Start time not found!")
     
-    text = request.get_json()['text']
+    text = data['text']
     if text is None:
         abort(404, description="Text not found!")
 
-    end_time = request.get_json()['end_time']
+    end_time = data['end_time']
 
     video = Video.query.filter_by(video_title=video_title).first_or_404()
     new_transcript = Transcript(video_id = video.id, start_time = float(start_time), end_time = float(end_time), text = text)
@@ -59,6 +53,22 @@ def add_transcript():
 
 @app.route("/api/delete_transcript", methods=['POST'])
 def delete_transcript():
+    """
+    Delete a transcript entry from the database based on the provided transcript ID.
+
+    This function processes a JSON POST request to delete a transcript entry from the database.
+    The transcript ID is extracted from the request JSON. If the transcript ID is not found in the request,
+    a 404 error is raised. The function queries the database for the transcript with the provided ID,
+    and if it exists, the transcript entry is deleted from the database and the changes are committed.
+    A success status is returned as a JSON response upon successful deletion.
+
+    Returns:
+        A JSON response indicating the success of the deletion operation:
+        {"success": true}
+
+    Raises:
+        404: If the transcript ID is not found in the request data or if no transcript exists with the provided ID.
+    """
     # get variables
     transcript_id = request.get_json()['transcript_id']
     if transcript_id is None:
@@ -87,10 +97,6 @@ def add_video():
 
     Raises:
         404 Error: If the uploaded video file is not found in the request.
-
-    Example Usage:
-        POST request with a video file named "my_video.mp4"
-        Response: {"video_title": "my_video_2.mp4"}
     """
 
     # get video file from request
@@ -98,6 +104,10 @@ def add_video():
     if video_file is None:
         abort(404, description="Video file not found!")
     
+    user_ip = request.form['user_ip']
+    if user_ip is None:
+        abort(404, description="User ip-address not found!")
+
     # save video to storage/file
     file_name = secure_filename(video_file.filename)
     file_path = os.path.join("main", "user_data", "videos" , file_name)
@@ -105,7 +115,7 @@ def add_video():
     video_file.save(file_path)
 
     # add to database
-    video = Video(video_title = file_name)
+    video = Video(video_title = file_name, user_ip = user_ip)
     db.session.add(video)
     db.session.commit()
     
@@ -129,11 +139,6 @@ def generate_transcript():
 
     Raises:
         404 Error: If the video title is not found in the request or if any error occurs during transcript generation.
-
-    Example JSON Payload:
-    {
-        "video_title": "my_video_2.mp4"
-    }
     """
     # get variables
     data = request.get_json(silent=True)
@@ -180,6 +185,92 @@ def generate_transcript():
     # return the generated video file. The path for send_file function must be relative to current file and not root directory.
     generated_transcript_path = os.path.join("user_data", "transcripts" , transcript_title)
     return send_file(generated_transcript_path)
+
+@app.route("/api/get_titles", methods=['POST'])
+def get_titles():
+    """
+    Retrieve video titles and corresponding generated transcript titles for a given user IP address.
+
+    This endpoint processes a POST request containing user data to retrieve a list of video titles
+    associated with a specific user's IP address. If the user's IP address is not found in the request data,
+    a 404 error is raised. The endpoint queries the database for videos associated with the provided IP
+    address, and if any videos are found, it fetches their titles and corresponding generated transcript titles
+    (if available). The result is returned as a JSON object.
+
+    Returns:
+        A JSON response containing video titles and corresponding generated transcript titles (if available).
+        The response format is as follows:
+        {"video_title_1": "transcript_title_1", "video_title_2": "transcript_title_2",...}
+        If no videos are associated with the provided user IP address, the response will be:
+        {"videos": null}
+        
+    Raises:
+        404: If the user IP address is not found in the request data.
+    """
+    data = request.get_json(silent=True)
+    user_ip = data['user_ip']
+    if user_ip is None:
+        abort(404, description="User ip-address not found!")
+    
+    videos = Video.query.filter_by(user_ip = user_ip).all()
+    if len(videos) == 0:
+        return jsonify({'videos': None})
+    
+    titles = {}
+    for video in videos:
+        id = video.generated_transcript_id
+        if id != 0:
+            titles[video.video_title] = GeneratedTranscript.query.filter_by(id = id).first().transcript_title
+        else:
+            titles[video.video_title] = None
+        
+    return jsonify(titles)
+
+@app.route("/api/download_transcript", methods=['POST'])
+def download_transcript():
+    """
+    Download a generated transcript file based on the provided transcript title.
+
+    This endpoint handles a POST request to download a generated transcript file from the server.
+    The transcript title is extracted from the request JSON. If the transcript title is not found in the request,
+    a 404 error is raised. The function queries the database for the generated transcript with the provided title.
+    If the transcript exists, its file path is determined, and the file is sent to the client for download.
+
+    Returns:
+        A file download response containing the requested transcript file.
+
+    Raises:
+        404: If the transcript title is not found in the request data or if no generated transcript exists with the provided title.
+    """
+    data = request.get_json(silent=True)
+    transcript_title = data['transcript_title']
+    generated_transcript = GeneratedTranscript.query.filter_by(transcript_title=transcript_title).first_or_404()
+    
+    generated_transcript_path = os.path.join("user_data", "transcripts" , transcript_title)
+    return send_file(generated_transcript_path)
+
+@app.route("/api/get_video", methods=['POST'])
+def get_video():
+    """
+    Retrieve and serve a video file based on the provided video title.
+
+    This endpoint handles a POST request to retrieve and serve a video file from the server.
+    The video title is extracted from the request JSON. If the video title is not found in the request,
+    a 404 error is raised. The function queries the database for the video with the provided title.
+    If the video exists, its file path is determined, and the file is sent to the client for streaming or download.
+
+    Returns:
+        A video file response allowing the client to stream or download the requested video.
+
+    Raises:
+        404: If the video title is not found in the request data or if no video exists with the provided title.
+    """
+    data = request.get_json(silent=True)
+    video_title = data['video_title']
+    video = Video.query.filter_by(video_title=video_title).first_or_404()
+    
+    video_path = os.path.join("user_data", "videos" , video_title)
+    return send_file(video_path)
 
 def find_available_file(file_path):
     """

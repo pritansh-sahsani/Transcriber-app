@@ -5,6 +5,7 @@ class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     video_title = db.Column(db.String(255), nullable=False, unique=True)
     upload_time = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    user_ip = db.Column(db.String(50), nullable=False)
     generated_transcript_id = db.Column(db.Integer, default=0)
 
     def __repr__(self):

@@ -82,7 +82,7 @@
           <source type="video/mp4" ref="generated_video_source">   
           <track kind="captions" srclang="en-us" label="English" ref="generated_transcript" default>
       </video>
-        <a id="download_link"><button id="download_link_button" class="btn btn-primary">Download Generated Transcript</button></a>
+        <a @click="downloadTranscript"><button id="download_link_button" class="btn btn-primary">Download Generated Transcript</button></a>
     </div>
 
   </div>
@@ -91,12 +91,14 @@
 
 <script>
 import axios from 'axios';
+  import { saveAs } from 'file-saver';
 
 export default {
     name: "IndexPage",
-    
+    props: ['title_from_user'],  	
     data() {
       return {
+        prev_upload_vid: null,
         show_initial_frame: true,
         show_preview: false,
         show_table: false,
@@ -106,7 +108,8 @@ export default {
         end_enabled: true,
         file: null,
         file_name: "Choose file...",
-        transcription: []
+        transcription: [],
+        user_ip: null,
       };
     },
 
@@ -124,6 +127,17 @@ export default {
         document.getElementById("time_end_input").value = this.timeToStr(this.video_end.currentTime);
       });
       document.getElementById("time_end_input").value = null;
+      axios.get('https://api.ipify.org?format=json')
+        .then(response => {
+          this.user_ip = response.data.ip;
+        })
+        .catch(error => {
+          console.error(error);
+        });
+      
+      if(this.$route.params.title_from_user != null){
+        this.generatePreviouslyUploaded();
+      }
     },
     methods: {
 
@@ -158,21 +172,15 @@ export default {
     // send video to flask API
     uploadVideo() {
         const formData = new FormData();
+        formData.append('user_ip', this.user_ip);
         formData.append('video', this.file);
         const apiUrl = 'http://127.0.0.1:5000/api/add_video';
 
-        fetch(apiUrl, {
-          method: 'POST',
-          body: formData,
+        axios.post(apiUrl, formData, {
+            headers: {'Content-Type': 'multipart/form-data'}
         })
           .then(async response => {
-            if (!response.ok) {
-              alert('There was an unexpected error, please try again!');
-            }
-            else{
-              this.TitleForAPI = await response.json();
-              this.TitleForAPI = this.TitleForAPI.video_title
-            }
+            this.TitleForAPI = await response.data.video_title;
           })
           .catch((error) => {
             console.error(error.message);
@@ -349,9 +357,11 @@ export default {
       }
     },
     downloadTranscript(){
-      var link = document.getElementById('download_link');
-      link.href = this.href;
-      link.setAttribute('download', this.href);
+      const parts = this.TitleForAPI.split(".");
+      const newFilename = parts.slice(0, parts.length - 1).join(".") + ".vtt";
+      var vvt_extension_filename = newFilename
+      
+      saveAs(this.href, vvt_extension_filename);
     },
     editTranscript($event){
       var transcript_id = $event.target.id;
@@ -359,7 +369,6 @@ export default {
       axios({
         url: apiUrl,
         method: 'POST',
-        responseType: 'blob',
         data:{
         headers: { "Content-Type": "application/json" },
         'transcript_id': transcript_id,}
@@ -396,7 +405,6 @@ export default {
       axios({
         url: apiUrl,
         method: 'POST',
-        responseType: 'blob',
         data:{
         headers: { "Content-Type": "application/json" },
         'transcript_id': transcript_id,}
@@ -424,6 +432,41 @@ export default {
         });  
     },
     
+    generatePreviouslyUploaded(){
+      var video_title = this.$route.params.title_from_user;
+      const apiUrl = 'http://127.0.0.1:5000/api/get_video';
+      axios({
+        url: apiUrl,
+        method: 'POST',
+        responseType: 'blob',
+        data:{
+        headers: { "Content-Type": "application/json" },
+        video_title: video_title}
+      })
+        .then(async response => {
+          var resp = await response.data;
+          this.file = resp;
+          this.file_name = video_title;
+          this.TitleForAPI = video_title;
+          this.setupPreviouslyUploaded();
+        })
+        .catch((error) => {
+          console.error(error.message);
+          alert('There was an unexpected error, please try again!');
+        });
+    },
+    setupPreviouslyUploaded(){
+      const video_start = document.getElementById('video_preview_start');
+      const video_end = document.getElementById('video_preview_end');
+      
+      this.displayPreview();
+
+      video_start.src = URL.createObjectURL(this.file);
+      video_end.src = URL.createObjectURL(this.file);
+      video_start.load();
+      video_end.load();
+    },
+    
     displayPreview(){
       this.show_initial_frame= false;
       this.show_preview= true;
@@ -447,9 +490,6 @@ export default {
       // display subtitles
       this.href = URL.createObjectURL(this.generated_file);
       this.$refs.generated_transcript.src=this.href;
-
-      // download button
-      this.downloadTranscript();
     },
 
     displayWaiting(){
