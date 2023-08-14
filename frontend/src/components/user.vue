@@ -68,7 +68,7 @@ export default {
       },
 
       display_user_generations(){
-        const apiUrl = 'http://127.0.0.1:5000/api/get_titles';
+        const apiUrl = this.api_link+'/api/get_titles';
         axios({
           url: apiUrl,
           method: 'POST',
@@ -101,7 +101,7 @@ export default {
 
       downloadTranscript($event){
         var transcription_title = $event.target.id;
-        const apiUrl = 'http://127.0.0.1:5000/api/download_transcript';
+        const apiUrl = this.api_link+'/api/download_transcript';
         axios({
           url: apiUrl,
           method: 'POST',
@@ -121,7 +121,7 @@ export default {
       },
       generatePreviouslyUploaded($event){
         var video_title = $event.target.id;
-        const apiUrl = 'http://127.0.0.1:5000/api/get_video';
+        const apiUrl = this.api_link+'/api/get_video';
         axios({
           url: apiUrl,
           method: 'POST',

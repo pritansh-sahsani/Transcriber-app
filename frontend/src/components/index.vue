@@ -109,6 +109,8 @@ export default {
         file_name: "Choose file...",
         transcription: [],
         user_ip: null,
+
+        api_link: "https://transcription-app.onrender.com", 
       };
     },
 
@@ -173,7 +175,7 @@ export default {
         const formData = new FormData();
         formData.append('user_ip', this.user_ip);
         formData.append('video', this.file);
-        const apiUrl = 'http://127.0.0.1:5000/api/add_video';
+        const apiUrl = this.api_link+'/api/add_video';
 
         axios.post(apiUrl, formData, {
             headers: {'Content-Type': 'multipart/form-data'}
@@ -290,7 +292,7 @@ export default {
     
     AddTranscriptToAPI(start_t, end_t, text){
       var transcript_id;
-      const apiUrl = 'http://127.0.0.1:5000/api/add_transcript';
+      const apiUrl = this.api_link+'/api/add_transcript';
       var data = { 
         video_title: this.TitleForAPI,
         start_time: start_t, 
@@ -326,7 +328,7 @@ export default {
     generateTranscript(){
       if (this.show_table){
         this.displayWaiting();
-        const apiUrl = 'http://127.0.0.1:5000/api/generate_transcript';
+        const apiUrl = this.api_link+'/api/generate_transcript';
         axios({
           url: apiUrl,
           method: 'POST',
@@ -433,7 +435,7 @@ export default {
     
     generatePreviouslyUploaded(){
       var video_title = this.$route.params.title_from_user;
-      const apiUrl = 'http://127.0.0.1:5000/api/get_video';
+      const apiUrl = this.api_link+'/api/get_video';
       axios({
         url: apiUrl,
         method: 'POST',
