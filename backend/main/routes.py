@@ -1,7 +1,6 @@
 from main import app, db
 from flask import jsonify, request, abort, send_file
 from .models import Video, GeneratedTranscript, Transcript
-from werkzeug.utils import secure_filename
 from moviepy.editor import VideoFileClip
 from io import BytesIO
 
@@ -109,10 +108,9 @@ def add_video():
     if user_ip is None:
         abort(404, description="User ip-address not found!")
 
-    # save video to storage/file
-    file_name = secure_filename(video_file.filename)
-    file_path = os.path.join("main", "user_data", "videos" , file_name)
-    file_path, file_name = find_available_file(file_path=file_path)
+    # get unique video title
+    videos = Video.query.with_entities(Video.video_title).all()
+    file_name = generate_unique_filename(videos, video_file.filename)
 
     # add to database
     video = Video(video_title = file_name, user_ip = user_ip, data = video_file.read())
@@ -147,17 +145,13 @@ def generate_transcript():
     if video_title is None:
         abort(404, description="Video title not found!")
 
+    video_length = data.get('video_length')
+    if video_length is None:
+        abort(404, description="Video length not found!")
+
     # get data from database
     video = Video.query.filter_by(video_title=video_title).first_or_404()
     db_transcripts = Transcript.query.filter_by(video_id=video.id).all()
-    
-    # get video path
-    video_path = os.path.join("main", "user_data", "videos" , video_title)
-
-    # get file_path
-    path, base_name, extension = split_file_path(os.path.join("main", "user_data", "transcripts" , video_title))
-    transcript_title = base_name+'.vtt'
-    transcript_path = os.path.join(path, transcript_title)
 
     # handle transcripts for generating video
     transcripts=[]
@@ -165,15 +159,22 @@ def generate_transcript():
         transcripts.append([t.start_time, t.end_time, t.text])
     
     # handle end time being empty or overlaping next transcript
-    has_errors = ensure_transcript_integrity(transcripts, video_path)
+    has_errors = ensure_transcript_integrity(transcripts, video_length)
     if has_errors:
+        for transcript in Transcript.query.filter_by(video_id = video.id).all():
+            db.session.delete(transcript)
+            db.session.commit()
+
         abort(404,  description="Transcripts are overlapping!")
 
     # generate transcript file
-    data=generate_transcript_file(transcripts=transcripts, filepath=transcript_path)
+    data=generate_transcript_file(transcripts=transcripts)
+
+    # Create new transcript file name
+    transcript_title = replace_file_extension(video_title, 'vtt')
 
     # add to database
-    generated_transcript = GeneratedTranscript(transcript_title = transcript_title, data =data)    
+    generated_transcript = GeneratedTranscript(transcript_title = transcript_title, data=bytes(data,'ascii'))
     db.session.add(generated_transcript)
     db.session.commit()
 
@@ -274,84 +275,8 @@ def get_video():
     video_data = video.data
     return send_file(BytesIO(video_data), mimetype="video/mp4")
 
-def find_available_file(file_path):
-    """
-    Find an available filename by appending a numeric suffix.
 
-    This function takes a file path as input and appends a numeric suffix to the file name (before the extension) if the
-    initial file name is already taken. It checks if the file path exists and, if so, iterates through appending
-    incremental numeric suffixes until an available file name is found.
-
-    Parameters:
-        file_path (str): The original path of the file.
-
-    Returns:
-        tuple: A tuple containing the full path of the available file and its corresponding new file name.
-
-    Example Usage:
-        original_file_path = "path/to/myfile.txt"
-        available_path, new_file_name = find_available_file(original_file_path)
-    """
-
-    suffix = 1
-    dir, file_name, extension = split_file_path(file_path)
-    if not os.path.exists(file_path):
-        return file_path, file_name+extension
-    while True:
-        new_file_name = add_suffix(file_path=file_path, suffix=suffix)
-        full_file_path = os.path.join(dir, new_file_name)
-        if not os.path.exists(full_file_path):
-            return full_file_path, new_file_name
-        suffix +=1
-
-def split_file_path(file_path):
-    """
-    Split a file path into directory, file name without extension, and file extension.
-
-    This function takes a file path as input and splits it into its components: the directory path, the file name without
-    extension, and the file extension. It extracts the necessary parts to facilitate handling file paths.
-
-    Parameters:
-        file_path (str): The full path of the file, including directory and file name.
-
-    Returns:
-        tuple: A tuple containing the directory path, the file name without extension, and the file extension.
-
-    Example Usage:
-        full_file_path = "/path/to/myfile.txt"
-        dir_path, filename, extension = split_file_path(full_file_path)
-    """
-    directory_path = os.path.dirname(file_path)
-    file_name_without_extension = os.path.splitext(os.path.basename(file_path))[0]
-    file_extension = os.path.splitext(file_path)[1]
-    
-    return directory_path, file_name_without_extension, file_extension
-
-def add_suffix(file_path, suffix):
-    """
-    Add a provided suffix to the file name while keeping path and extension consistent.
-
-    This function takes a file path, appends a numeric suffix to the file name (before the extension), and returns the
-    new file name. It ensures that the directory path and file extension remain consistent in the returned file path.
-
-    Parameters:
-        file_path (str): The original path of the file.
-        suffix (int): The numeric suffix to be added to the file name.
-
-    Returns:
-        str: The new file name with the added numeric suffix.
-
-    Example Usage:
-        original_file_path = "/path/to/myfile.txt"
-        new_filename = add_suffix(original_file_path, 2)  # Returns "myfile_2.txt"
-    """
-    # Split the original file path into directory, base name, and extension
-    directory, base_name, extension = split_file_path(file_path)
-    new_file_name = f"{base_name}_{suffix}{extension}"
-
-    return new_file_name
-
-def ensure_transcript_integrity(transcript, path):
+def ensure_transcript_integrity(transcript, video_length):
     """
     Ensure the integrity of transcript time intervals.
 
@@ -361,8 +286,7 @@ def ensure_transcript_integrity(transcript, path):
     It also converts end times and start times from seconds to "HH:MM:SS,MIS", where "MIS" stands for milliseconds.
 
     Parameters:
-        transcript (list): A list of transcript segments, where each segment is represented as [start_time, end_time, text].
-        path (str): The path of the video file.
+        transcript (list): A list of transcript segments, where each segment is represented as [start_time, end_time, text].        
 
     Returns:
         bool: True if transcript time intervals are overlapping, otherwise False.
@@ -372,8 +296,9 @@ def ensure_transcript_integrity(transcript, path):
             [0.0, 5.0, "Hello"],
             [5.1, -1.0, "World"],
         ]
-        has_overlap = ensure_transcript_integrity(transcript_list, "path/to/video.mp4")
+        has_overlap = ensure_transcript_integrity(transcript_list)
     """
+
     for current in range(0, len(transcript)):
         # If the current transcript doesnt have a end time 
         if transcript[current][1] == -1.0:
@@ -383,7 +308,7 @@ def ensure_transcript_integrity(transcript, path):
                 transcript[current][1] = transcript[current+1][0]
             else:
                 # else the current end time will be the video end.
-                transcript[current][1] = get_video_duration(path)
+                transcript[current][1] = video_length
         else:
             # if the end time exists, ensure it is not overlaping next transcript.
             if current+1 < len(transcript):
@@ -415,29 +340,7 @@ def time_to_str(time):
     time_format = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
     return time_format
 
-def get_video_duration(path):
-    """
-    Get the duration of a video file.
-
-    This function uses the `VideoFileClip` class from the `moviepy.editor` module to extract and return the duration
-    of a video file in seconds. It opens the video clip, retrieves its duration, and then closes the clip.
-
-    Parameters:
-        path (str): The path of the video file.
-
-    Returns:
-        float: The duration of the video in seconds.
-
-    Example Usage:
-        video_path = "path/to/video.mp4"
-        duration = get_video_duration(video_path)
-    """
-    video_clip = VideoFileClip(path)
-    duration = video_clip.duration
-    video_clip.close()
-    return duration
-
-def generate_transcript_file(transcripts, filepath):
+def generate_transcript_file(transcripts):
     """
     Generate a .vtt transcript file from a list of transcripts.
 
@@ -464,3 +367,24 @@ def generate_transcript_file(transcripts, filepath):
         vtt_file_text += f"{transcript[2]}\n\n"
 
     return vtt_file_text
+
+def generate_unique_filename(video_data, new_filename):
+    existing_filenames = []
+    for object in video_data:
+        existing_filenames.append(object.video_title)
+        
+    if new_filename not in existing_filenames:
+        return new_filename
+    
+    base_name, extension = os.path.splitext(new_filename)
+    counter = 1
+    while True:
+        new_name = f"{base_name}_{counter}{extension}"
+        if new_name not in existing_filenames:
+            return new_name
+        counter += 1
+
+def replace_file_extension(file_name, new_extension):
+    base_name, _ = os.path.splitext(file_name)
+    new_file_name = base_name + '.' + new_extension
+    return new_file_name

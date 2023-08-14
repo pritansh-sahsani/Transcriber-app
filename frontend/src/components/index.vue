@@ -21,7 +21,7 @@
           <h3 id="end_preview_title" v-show="end_enabled">End Frame</h3>
         </div>
         <div>
-          <video id="video_preview_start" ref="video_start" controls></video>
+          <video @loadedmetadata="logDuration" id="video_preview_start" ref="video_start" controls></video>
           <video id="video_preview_end" ref="video_end" v-show="end_enabled" controls></video>
         </div>
       </div>
@@ -170,6 +170,10 @@ export default {
       video_end.load();
     },
 
+    logDuration(){
+      this.video_length = this.$refs.video_start.duration;
+    },
+
     // send video to flask API
     uploadVideo() {
         const formData = new FormData();
@@ -293,6 +297,13 @@ export default {
     AddTranscriptToAPI(start_t, end_t, text){
       var transcript_id;
       const apiUrl = this.api_link+'/api/add_transcript';
+      this.transcription.forEach(transcript => {
+        if (transcript[2] > end_t)
+        {
+          alert("Transcripts are overlapping!");
+          return
+        }
+      });
       var data = { 
         video_title: this.TitleForAPI,
         start_time: start_t, 
@@ -335,22 +346,16 @@ export default {
           responseType: 'blob',
           data:{
           headers: { "Content-Type": "application/json" },
-          video_title: this.TitleForAPI,}
+          video_title: this.TitleForAPI,
+          video_length: this.video_length}
         })
           .then(async response => {
               this.generated_file = await response.data;
               this.displayGenerated();
           })
           .catch((error) => {
-              if (error.message == 'Request failed with status code 404')
-              {
-                alert("Transcripts are overlapping!");
-                this.displayPreview();
-              }
-              else{
-                console.error(error.message);
-                alert('There was an unexpected error, please try again!');
-              }
+              console.error(error.message);
+              alert('There was an unexpected error, please try again!');
           });
       }
       else{
@@ -359,14 +364,14 @@ export default {
     },
     downloadTranscript(){
       const parts = this.TitleForAPI.split(".");
-      const newFilename = parts.slice(0, parts.length - 1).join(".") + ".vtt";
+      const newFilename = parts.slice(0, parts.length - 1) + ".vtt";
       var vvt_extension_filename = newFilename
       
       saveAs(this.href, vvt_extension_filename);
     },
     editTranscript($event){
       var transcript_id = $event.target.id;
-      const apiUrl = "http://127.0.0.1:5000/api/delete_transcript";
+      const apiUrl =  this.api_link+"/api/delete_transcript";
       axios({
         url: apiUrl,
         method: 'POST',
@@ -402,7 +407,7 @@ export default {
 
     deleteTranscript($event){
       var transcript_id = $event.target.id;
-      const apiUrl = "http://127.0.0.1:5000/api/delete_transcript";
+      const apiUrl = this.api_link+"/api/delete_transcript";
       axios({
         url: apiUrl,
         method: 'POST',
@@ -435,6 +440,7 @@ export default {
     
     generatePreviouslyUploaded(){
       var video_title = this.$route.params.title_from_user;
+      alert("Please wait while we get your video. This might take a while.");
       const apiUrl = this.api_link+'/api/get_video';
       axios({
         url: apiUrl,
