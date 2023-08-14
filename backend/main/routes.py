@@ -1,4 +1,4 @@
-from main import app, db
+from .run import app, db
 from flask import jsonify, request, abort, send_file
 from .models import Video, GeneratedTranscript, Transcript
 from werkzeug.utils import secure_filename
@@ -110,7 +110,7 @@ def add_video():
 
     # save video to storage/file
     file_name = secure_filename(video_file.filename)
-    file_path = os.path.join("main", "user_data", "videos" , file_name)
+    file_path = os.path.join("user_data", "videos" , file_name)
     file_path, file_name = find_available_file(file_path=file_path)
     video_file.save(file_path)
 
@@ -152,10 +152,10 @@ def generate_transcript():
     db_transcripts = Transcript.query.filter_by(video_id=video.id).all()
     
     # get video path
-    video_path = os.path.join("main", "user_data", "videos" , video_title)
+    video_path = os.path.join("user_data", "videos" , video_title)
 
     # get file_path
-    path, base_name, extension = split_file_path(os.path.join("main", "user_data", "transcripts" , video_title))
+    path, base_name, extension = split_file_path(os.path.join("user_data", "transcripts" , video_title))
     transcript_title = base_name+'.vtt'
     transcript_path = os.path.join(path, transcript_title)
 

@@ -1,4 +1,4 @@
-from main import db, app
+from .run import db, app
 from datetime import datetime
 
 class Video(db.Model):
