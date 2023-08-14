@@ -7,6 +7,7 @@ class Video(db.Model):
     upload_time = db.Column(db.DateTime, nullable=False, default=datetime.now)
     user_ip = db.Column(db.String(50), nullable=False)
     generated_transcript_id = db.Column(db.Integer, default=0)
+    data = db.Column(db.LargeBinary)
 
     def __repr__(self):
         return f"<Video {self.id}>"
@@ -15,6 +16,7 @@ class GeneratedTranscript(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     transcript_title = db.Column(db.String(255), nullable=False, unique=True)
     generated_time = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    data = db.Column(db.LargeBinary)
 
     def __repr__(self):
         return f"<GeneratedTranscript {self.id}>"

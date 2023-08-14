@@ -3,6 +3,7 @@ from flask import jsonify, request, abort, send_file
 from .models import Video, GeneratedTranscript, Transcript
 from werkzeug.utils import secure_filename
 from moviepy.editor import VideoFileClip
+from io import BytesIO
 
 import os
 
@@ -27,7 +28,7 @@ def add_transcript():
     """
     # get variables
     data = request.get_json()
-    
+
     video_title = data['video_title']
     if video_title is None:
         abort(404, description="Video title not found!")
@@ -112,10 +113,9 @@ def add_video():
     file_name = secure_filename(video_file.filename)
     file_path = os.path.join("main", "user_data", "videos" , file_name)
     file_path, file_name = find_available_file(file_path=file_path)
-    video_file.save(file_path)
 
     # add to database
-    video = Video(video_title = file_name, user_ip = user_ip)
+    video = Video(video_title = file_name, user_ip = user_ip, data = video_file.read())
     db.session.add(video)
     db.session.commit()
     
@@ -170,10 +170,10 @@ def generate_transcript():
         abort(404,  description="Transcripts are overlapping!")
 
     # generate transcript file
-    generate_transcript_file(transcripts=transcripts, filepath=transcript_path)
+    data=generate_transcript_file(transcripts=transcripts, filepath=transcript_path)
 
     # add to database
-    generated_transcript = GeneratedTranscript(transcript_title = transcript_title)    
+    generated_transcript = GeneratedTranscript(transcript_title = transcript_title, data =data)    
     db.session.add(generated_transcript)
     db.session.commit()
 
@@ -182,9 +182,9 @@ def generate_transcript():
     Video.query.filter_by(id=video.id).update(dict(generated_transcript_id = generated_transcript.id))
     db.session.commit()
 
-    # return the generated video file. The path for send_file function must be relative to current file and not root directory.
-    generated_transcript_path = os.path.join("user_data", "transcripts" , transcript_title)
-    return send_file(generated_transcript_path)
+    # return file
+    generated_transcript_data = generated_transcript.data
+    return send_file(BytesIO(generated_transcript_data), mimetype="text/vtt")
 
 @app.route("/api/get_titles", methods=['POST'])
 def get_titles():
@@ -246,8 +246,9 @@ def download_transcript():
     transcript_title = data['transcript_title']
     generated_transcript = GeneratedTranscript.query.filter_by(transcript_title=transcript_title).first_or_404()
     
-    generated_transcript_path = os.path.join("user_data", "transcripts" , transcript_title)
-    return send_file(generated_transcript_path)
+    # return file
+    generated_transcript_data = generated_transcript.data
+    return send_file(BytesIO(generated_transcript_data), mimetype="text/vtt")
 
 @app.route("/api/get_video", methods=['POST'])
 def get_video():
@@ -269,8 +270,9 @@ def get_video():
     video_title = data['video_title']
     video = Video.query.filter_by(video_title=video_title).first_or_404()
     
-    video_path = os.path.join("user_data", "videos" , video_title)
-    return send_file(video_path)
+    # return file
+    video_data = video.data
+    return send_file(BytesIO(video_data), mimetype="video/mp4")
 
 def find_available_file(file_path):
     """
@@ -455,8 +457,10 @@ def generate_transcript_file(transcripts, filepath):
         transcript_file_path = "path/to/generated_transcript.vtt"
         generate_transcript_file(transcripts_list, transcript_file_path)
     """
-    with open(filepath, "w") as f:
-        f.write(f"WEBVTT\n\n")
-        for transcript in transcripts:
-            f.write(f"{transcript[0]} --> {transcript[1]}\n")
-            f.write(f"{transcript[2]}\n\n")
+    vtt_file_text = ""
+    vtt_file_text += f"WEBVTT\n\n"
+    for transcript in transcripts:
+        vtt_file_text += f"{transcript[0]} --> {transcript[1]}\n"
+        vtt_file_text += f"{transcript[2]}\n\n"
+
+    return vtt_file_text
