@@ -49,6 +49,8 @@ export default {
         user_ip: null,
         titles: null,
         video_titles: null,
+        
+        api_link: "https://transcription-app.onrender.com", 
       };
     },
   
