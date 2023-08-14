@@ -297,11 +297,12 @@ export default {
     AddTranscriptToAPI(start_t, end_t, text){
       var transcript_id;
       const apiUrl = this.api_link+'/api/add_transcript';
+      var run = true;
       this.transcription.forEach(transcript => {
-        if (transcript[2] > end_t)
+        if (this.strToTime(transcript[2]) > start_t)
         {
           alert("Transcripts are overlapping!");
-          return
+          run = false;
         }
       });
       var data = { 
@@ -310,6 +311,7 @@ export default {
         end_time: end_t, 
         text: text
       }
+      if (run){
       fetch(apiUrl, {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
@@ -334,7 +336,7 @@ export default {
         .catch((error) => {
           console.error(error.message);
           alert('There was an unexpected error, please try again!');
-        });
+        });}
     },
     generateTranscript(){
       if (this.show_table){

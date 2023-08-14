@@ -212,12 +212,12 @@ Raises:
 
 404: If the video title is not found in the request data or if no video exists with the provided title.
 
-### find_available_file()
+### generate_unique_filename()
 Find an available filename by appending a numeric suffix.
 
   
 
-This function takes a file path as input and appends a numeric suffix to the file name (before the extension) if the
+This function takes a file name as input and appends a numeric suffix to the file name (before the extension) if the
 
 initial file name is already taken. It checks if the file path exists and, if so, iterates through appending
 
@@ -227,81 +227,22 @@ incremental numeric suffixes until an available file name is found.
 
 Parameters:
 
-file_path (str): The original path of the file.
+video_data (sql query): A result from the query of all the videos
+file_name (str): The original name of the file.
 
   
 
 Returns:
 
-tuple: A tuple containing the full path of the available file and its corresponding new file name.
+new_file_name: A string of the new file name.
 
   
 
 Example Usage:
 
-original_file_path = "path/to/myfile.txt"
+original_file_name = "myfile.txt"
 
-available_path, new_file_name = find_available_file(original_file_path)
-
-### split_file_path()
-Split a file path into directory, file name without extension, and file extension.
-
-  
-
-This function takes a file path as input and splits it into its components: the directory path, the file name without
-
-extension, and the file extension. It extracts the necessary parts to facilitate handling file paths.
-
-  
-
-Parameters:
-
-file_path (str): The full path of the file, including directory and file name.
-
-  
-
-Returns:
-
-tuple: A tuple containing the directory path, the file name without extension, and the file extension.
-
-  
-
-Example Usage:
-
-full_file_path = "/path/to/myfile.txt"
-
-dir_path, filename, extension = split_file_path(full_file_path)
-
-### add_suffix
-Add a provided suffix to the file name while keeping path and extension consistent.
-
-  
-
-This function takes a file path, appends a numeric suffix to the file name (before the extension), and returns the
-
-new file name. It ensures that the directory path and file extension remain consistent in the returned file path.
-
-  
-
-Parameters:
-
-file_path (str): The original path of the file.
-
-suffix (int): The numeric suffix to be added to the file name.
-
-  
-
-Returns:
-
-str: The new file name with the added numeric suffix.
-
-  
-
-Example Usage:
-
-original_file_path = "/path/to/myfile.txt"
-
-new_filename = add_suffix(original_file_path, 2) # Returns "myfile_2.txt"
+new_file_name = generate_unique_filename(original_file_name)
 
 ### ensure_transcript_integrity()
 Ensure the integrity of transcript time intervals.
@@ -322,7 +263,7 @@ Parameters:
 
 transcript (list): A list of transcript segments, where each segment is represented as [start_time, end_time, text].
 
-path (str): The path of the video file.
+video_length (float): The duration of the video file.
 
   
 
@@ -342,7 +283,8 @@ transcript_list = [
 
 ]
 
-has_overlap = ensure_transcript_integrity(transcript_list, "path/to/video.mp4")
+has_overlap = ensure_transcript_integrity(transcript_list, 9.2)
+
 
 ### time_to_str()
 Convert a given time in seconds to the format "hours : minutes : seconds, milliseconds".
@@ -359,41 +301,11 @@ Returns:
 
 str: The formatted time string in the format "hours : minutes : seconds, milliseconds".
 
-### get_video_duration()
-Get the duration of a video file.
-
-  
-
-This function uses the `VideoFileClip` class from the `moviepy.editor` module to extract and return the duration
-
-of a video file in seconds. It opens the video clip, retrieves its duration, and then closes the clip.
-
-  
-
-Parameters:
-
-path (str): The path of the video file.
-
-  
-
-Returns:
-
-float: The duration of the video in seconds.
-
-  
-
-Example Usage:
-
-video_path = "path/to/video.mp4"
-
-duration = get_video_duration(video_path)
-
-### generate_transcript_file Generate a .vtt transcript file from a list of transcripts.
+### generate_transcript_file() 
+Generate a .vtt transcript string from a list of transcripts.
 This function takes a list of transcripts, where each transcript includes a start time, end time, and text content.
 
-It generates a .vtt (Web Video Text Tracks) subtitle file format based on the provided transcripts and saves it at
-
-the specified file path.
+It generates a .vtt (Web Video Text Tracks) subtitle file format text based on the provided transcripts.
 
   
 
@@ -401,8 +313,8 @@ Args:
 
 transcripts (list): A list of transcripts, each containing [start_time, end_time, text].
 
-filepath (str): The file path to save the generated transcript file.
-
+Returns:
+vtt_file_text(string): string that can be saved to a .vtt to save the transcript.
   
 
 Example Usage:
@@ -415,9 +327,7 @@ transcripts_list = [
 
 ]
 
-transcript_file_path = "path/to/generated_transcript.vtt"
-
-generate_transcript_file(transcripts_list, transcript_file_path)
+text = generate_transcript_file(transcripts_list)
 
 ##  Frontend
 ### IndexPage : index.vue
